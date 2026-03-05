@@ -1,39 +1,62 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
-import { OrderPaginationDTO, ChangeOrderStatusDto, CreateOrderDto } from './dto';
+import {
+  OrderPaginationDTO,
+  ChangeOrderStatusDto,
+  CreateOrderDto,
+} from './dto';
 import { NATS_SERVICE } from 'src/config';
 import { firstValueFrom } from 'rxjs';
+import { OrderWithProducts } from './interfaces/order-with-products.interface';
 
 @Injectable()
 export class OrdersService {
-  constructor(@Inject(NATS_SERVICE) private readonly client: ClientProxy, private prisma: PrismaService) {
-  }
-  
+  constructor(
+    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
+    private prisma: PrismaService,
+  ) {}
+
   async create(createOrderDto: CreateOrderDto) {
     try {
-      // Validate products exist by communicating with Products microservice  
-      const products1 = createOrderDto.items
-      const ids = products1.map(item => item.productId);
-      const products: any = await firstValueFrom(this.client.send({ cmd: 'validateProductsByIds' }, ids));
-
+      // Validate products exist by communicating with Products microservice
+      const products1 = createOrderDto.items;
+      const ids = products1.map((item) => item.productId);
+      const products = await firstValueFrom(
+        this.client.send({ cmd: 'validateProductsByIds' }, ids),
+      );
+      console.log('Validated products from Products microservice:', products);
       // Calculate information for order creation
-      const totalAmount = products.reduce((sum, item) => {
+      const totalAmount: number = products.reduce(
+        (
+          sum: number,
+          item: { id: number; quantity: number; price: number },
+        ) => {
+          const orderItem = createOrderDto.items.find(
+            (i) => i.productId === item.id,
+          );
+          console.log('Matching order item for product:', item.id, orderItem);
+          if (orderItem) {
+            item.quantity = orderItem.quantity;
+          } else {
+            console.warn(
+              `No matching order item found for product ID ${item.id}`,
+            );
+          }
 
-        const orderItem = createOrderDto.items.find(i => i.productId === item.id);
-        console.log('Matching order item for product:', item.id, orderItem);
-        if (orderItem) {
-          item.price = item.price;
-          item.quantity = orderItem.quantity;
-        }
+          return sum + item.price * item.quantity;
+        },
+        0,
+      );
 
-        return sum + (item.price * item.quantity)
-      }, 0);
-
-      // console.log('Total amount calculated:', totalAmount);
-      // return totalAmount;
-
-      const totalItems = createOrderDto.items.reduce((sum, item) => sum + item.quantity, 0);
+      const totalItems = createOrderDto.items.reduce(
+        (sum, item) => sum + item.quantity,
+        0,
+      );
 
       const order = await this.prisma.order.create({
         data: {
@@ -42,13 +65,15 @@ export class OrdersService {
 
           orderItem: {
             createMany: {
-              data: createOrderDto.items.map(item => ({
+              data: createOrderDto.items.map((item) => ({
                 productId: item.productId.toString(),
                 quantity: item.quantity,
-                price: products.find((p: { id: number; }) => p.id === item.productId).price,
-              }))
+                price: products.find(
+                  (p: { id: number }) => p.id === item.productId,
+                ).price,
+              })),
             },
-          }
+          },
         },
         include: {
           orderItem: {
@@ -56,33 +81,26 @@ export class OrdersService {
               productId: true,
               quantity: true,
               price: true,
-
-            }
-          }
+            },
+          },
         },
-
-      })
+      });
       return {
         ...order,
-        orderItem: order.orderItem.map(item => ({
+        orderItem: order.orderItem.map((item) => ({
           ...item,
-          name: products.find(i => i.id === parseInt(item.productId)).name,
-        }))  
-        
-      }
-      
-
-
+          name: products.find(
+            (i: { id: number }) => i.id === parseInt(item.productId),
+          ).name,
+        })),
+      };
     } catch (error) {
-
-      Logger.error('Error validating products', error);
+      Logger.error(error, 'OrdersService');
       throw new RpcException({
         code: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'Error validating products',
-
       });
     }
-
 
     // return {
     //   Message : 'Order created successfully',
@@ -92,13 +110,25 @@ export class OrdersService {
     //   data: createOrderDto,
     // });
   }
-
+  async createPaymentSession(order: OrderWithProducts) {
+    console.log('Creating payment session for order:', order);
+    return firstValueFrom(
+      this.client.send('create.payment.session', {
+        orderId: order.id,
+        currency: 'usd',
+        items: order.orderItem.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+      }),
+    );
+  }
   async findAll(orderPaginationDTO: OrderPaginationDTO) {
-
     const totalPages = await this.prisma.order.count({
       where: {
         status: orderPaginationDTO.status,
-      }
+      },
     });
 
     const currentPage = orderPaginationDTO.page ?? 1;
@@ -116,10 +146,8 @@ export class OrdersService {
         totalItems: totalPages,
         page: currentPage,
         lastPage: Math.ceil(totalPages / perPage),
-
-      }
-
-    }
+      },
+    };
   }
   async findOne(id: string) {
     const order = await this.prisma.order.findUnique({
@@ -132,11 +160,10 @@ export class OrdersService {
             productId: true,
             quantity: true,
             price: true,
-          }
+          },
         },
       },
     });
-
 
     if (!order) {
       console.log(`Order with ID ${id} not found`);
@@ -145,26 +172,24 @@ export class OrdersService {
         message: `Order with ID ${id} not found`,
       });
     }
-    const productIds = order.orderItem.map(item => Number(item.productId));
-    const products: any = await firstValueFrom(this.client.send({ cmd: 'validateProductsByIds' }, productIds));
+    const productIds = order.orderItem.map((item: { productId: any }) =>
+      Number(item.productId),
+    );
+    const products: any = await firstValueFrom(
+      this.client.send({ cmd: 'validateProductsByIds' }, productIds),
+    );
 
     return {
       ...order,
-      orderItem: order.orderItem.map(item => ({
+      orderItem: order.orderItem.map((item: { productId: string }) => ({
         // productId: item.productId,
         // quantity: item.quantity,
         // price: item.price,
-        name: products.find(i => i.id === parseInt(item.productId)).name,
-      })
-      ),
-    }
-
-
-
-
-
-
-
+        name: products.find(
+          (i: { id: number }) => i.id === parseInt(item.productId),
+        ).name,
+      })),
+    };
 
     // First try
 
@@ -183,7 +208,6 @@ export class OrdersService {
     //   ),
     // };
   }
-
 
   changeOrderStatus(id: string, status: ChangeOrderStatusDto['status']) {
     const order = this.prisma.order.findFirst({
