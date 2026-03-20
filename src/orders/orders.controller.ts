@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Controller } from '@nestjs/common';
-import { MessagePattern, Payload, ClientsModule } from '@nestjs/microservices';
+import { MessagePattern, Payload, ClientsModule, EventPattern } from '@nestjs/microservices';
 import { OrdersService } from './orders.service';
 import {
   OrderPaginationDTO,
@@ -44,5 +44,11 @@ export class OrdersController {
     );
     return this.ordersService.changeOrderStatus(data.id, data.status);
     // throw new RpcException('Not implemented yet');
+  }
+
+  @EventPattern('payment.suceeded')
+  paidOrder(@Payload() payload) {
+    console.log({ payload });
+    return;
   }
 }
