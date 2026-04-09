@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Controller } from '@nestjs/common';
-import { MessagePattern, Payload, ClientsModule, EventPattern } from '@nestjs/microservices';
+import { Controller, Logger } from '@nestjs/common';
+import { MessagePattern, Payload, EventPattern } from '@nestjs/microservices';
 import { OrdersService } from './orders.service';
 import {
   OrderPaginationDTO,
   CreateOrderDto,
   ChangeOrderStatusDto,
+  PaidOrderDto,
 } from './dto';
-import { OrderWithProducts } from './interfaces/order-with-products.interface';
 
 @Controller()
 export class OrdersController {
@@ -16,7 +16,9 @@ export class OrdersController {
   @MessagePattern('createOrder')
   async create(@Payload() createOrderDto: CreateOrderDto) {
     const order = await this.ordersService.create(createOrderDto);
+    Logger.log('Created order:', order);
     const paymentSession = await this.ordersService.createPaymentSession(order);
+    Logger.log('Created payment session for order:', paymentSession);
     return {
       order,
       paymentSession,
@@ -47,8 +49,10 @@ export class OrdersController {
   }
 
   @EventPattern('payment.suceeded')
-  paidOrder(@Payload() payload) {
-    console.log({ payload });
-    return;
+  async paidOrder(@Payload() payload: PaidOrderDto) {
+    // console.log({ payload });
+    console.log('Recived event');
+    await this.ordersService.handlePaidOrder(payload);
+    return 'Recived event';
   }
 }

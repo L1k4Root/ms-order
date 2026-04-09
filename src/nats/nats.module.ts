@@ -11,8 +11,8 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         options: {
           servers: envConfig.NATS_SERVERS,
         },
-      }
-  ]),
+      },
+    ]),
   ],
   exports: [
     ClientsModule.register([
@@ -22,8 +22,8 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         options: {
           servers: envConfig.NATS_SERVERS,
         },
-      }
-  ]),
+      },
+    ]),
   ],
 })
 export class NatsModule {}

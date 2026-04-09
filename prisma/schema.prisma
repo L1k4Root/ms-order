@@ -4,37 +4,52 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum OrderStatus {
   PENDING
   SHIPPED
+  PAID
   DELIVERED
   CANCELED
 }
 
 model Order {
-  id         String      @id @default(uuid())
-  totalPrice Float        
+  id         String @id @default(uuid())
+  totalPrice Float
   totalItems Int
 
-  status     OrderStatus @default(PENDING)
-  paid       Boolean     @default(false)
-  paidAt     DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  
-  orderItem  OrderItem[]
+  stripePaymentId String?
+
+  status    OrderStatus @default(PENDING)
+  paid      Boolean     @default(false)
+  paidAt    DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  orderItem OrderItem[]
+
+  orderReceipts OrderReceipt?
 }
 
 model OrderItem {
-  id        String   @id @default(uuid())
-  orderId   String
+  id        String @id @default(uuid())
+  orderId   String 
   productId String
   quantity  Int
   price     Float
 
-  order     Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
 
-  
+model OrderReceipt {
+  id         String @id @default(uuid())
+  receiptUrl String
+  orderId    String @unique
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

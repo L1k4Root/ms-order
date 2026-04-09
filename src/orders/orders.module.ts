@@ -9,7 +9,8 @@ import { NATS_SERVICE } from 'src/config';
 @Module({
   controllers: [OrdersController],
   providers: [OrdersService],
-  imports: [PrismaModule, 
+  imports: [
+    PrismaModule,
     ClientsModule.register([
       {
         name: NATS_SERVICE,
@@ -17,7 +18,8 @@ import { NATS_SERVICE } from 'src/config';
         options: {
           servers: envConfig.NATS_SERVERS,
         },
-      }
-    ])],
+      },
+    ]),
+  ],
 })
 export class OrdersModule {}

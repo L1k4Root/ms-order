@@ -1,14 +1,11 @@
-// src/prisma/prisma.service.ts
-import 'dotenv/config'; // para asegurarnos de tener .env cargado aquí también
+import 'dotenv/config';
 import {
   Injectable,
   Logger,
-  OnModuleInit,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 
 @Injectable()
 export class PrismaService
@@ -18,19 +15,8 @@ export class PrismaService
   private readonly logger = new Logger('Database Connection');
 
   constructor() {
-    // 1. Creamos el pool de pg usando la DATABASE_URL
-    const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-    });
-
-    // 2. Creamos el adapter para Prisma
-    const adapter = new PrismaPg(pool);
-
-    // 3. Llamamos al constructor de PrismaClient con opciones válidas
-    super({ adapter });
-
-    // Opcional: pequeño log para ver que el constructor se ejecutó bien
-    this.logger.log('PrismaService constructed with PrismaPg adapter');
+    super();
+    this.logger.log('PrismaService constructed');
   }
 
   async onModuleInit() {

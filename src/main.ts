@@ -8,22 +8,24 @@ import 'dotenv/config';
 async function bootstrap() {
   const logger = new Logger('OrderMicroservice');
 
-  const app = await NestFactory.createMicroservice<MicroserviceOptions>(AppModule,{
-    transport: Transport.NATS, // NATS transport
-    options: {
-      servers: envConfig.NATS_SERVERS,
+  const app = await NestFactory.createMicroservice<MicroserviceOptions>(
+    AppModule,
+    {
+      transport: Transport.NATS, // NATS transport
+      options: {
+        servers: envConfig.NATS_SERVERS,
+      },
     },
-  });
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-  }));
-
-
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   await app.listen();
   logger.log(`Starting OrderMicroservice on port: ${envConfig.PORT || 3000}`);
 }
-bootstrap();
+void bootstrap();

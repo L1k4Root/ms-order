@@ -9,6 +9,7 @@ import {
   OrderPaginationDTO,
   ChangeOrderStatusDto,
   CreateOrderDto,
+  PaidOrderDto,
 } from './dto';
 import { NATS_SERVICE } from 'src/config';
 import { firstValueFrom } from 'rxjs';
@@ -16,6 +17,8 @@ import { OrderWithProducts } from './interfaces/order-with-products.interface';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @Inject(NATS_SERVICE) private readonly client: ClientProxy,
     private prisma: PrismaService,
@@ -23,14 +26,11 @@ export class OrdersService {
 
   async create(createOrderDto: CreateOrderDto) {
     try {
-      // Validate products exist by communicating with Products microservice
-      const products1 = createOrderDto.items;
-      const ids = products1.map((item) => item.productId);
+      const ids = createOrderDto.items.map((item) => item.productId);
       const products = await firstValueFrom(
         this.client.send({ cmd: 'validateProductsByIds' }, ids),
       );
-      console.log('Validated products from Products microservice:', products);
-      // Calculate information for order creation
+
       const totalAmount: number = products.reduce(
         (
           sum: number,
@@ -39,13 +39,9 @@ export class OrdersService {
           const orderItem = createOrderDto.items.find(
             (i) => i.productId === item.id,
           );
-          console.log('Matching order item for product:', item.id, orderItem);
+
           if (orderItem) {
             item.quantity = orderItem.quantity;
-          } else {
-            console.warn(
-              `No matching order item found for product ID ${item.id}`,
-            );
           }
 
           return sum + item.price * item.quantity;
@@ -85,6 +81,7 @@ export class OrdersService {
           },
         },
       });
+
       return {
         ...order,
         orderItem: order.orderItem.map((item) => ({
@@ -95,23 +92,15 @@ export class OrdersService {
         })),
       };
     } catch (error) {
-      Logger.error(error, 'OrdersService');
+      this.logger.error('Error creating order', error);
       throw new RpcException({
         code: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'Error validating products',
       });
     }
-
-    // return {
-    //   Message : 'Order created successfully',
-    //   order: createOrderDto
-    // }
-    // return this.prisma.order.create({
-    //   data: createOrderDto,
-    // });
   }
+
   async createPaymentSession(order: OrderWithProducts) {
-    console.log('Creating payment session for order:', order);
     return firstValueFrom(
       this.client.send('create.payment.session', {
         orderId: order.id,
@@ -124,6 +113,7 @@ export class OrdersService {
       }),
     );
   }
+
   async findAll(orderPaginationDTO: OrderPaginationDTO) {
     const totalPages = await this.prisma.order.count({
       where: {
@@ -149,11 +139,10 @@ export class OrdersService {
       },
     };
   }
+
   async findOne(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-
-      // Second try: Include order items directly
       include: {
         orderItem: {
           select: {
@@ -166,7 +155,6 @@ export class OrdersService {
     });
 
     if (!order) {
-      console.log(`Order with ID ${id} not found`);
       throw new RpcException({
         code: HttpStatus.NOT_FOUND,
         message: `Order with ID ${id} not found`,
@@ -190,27 +178,13 @@ export class OrdersService {
         ).name,
       })),
     };
-
-    // First try
-
-    // const orderItems = await this.prisma.orderItem.findMany({
-    //   where: { orderId: id },
-    // });
-    // const products: any = await firstValueFrom(this.productsClient.send({ cmd: 'validateProductsByIds' }, orderItems.map(item => Number(item.productId))));
-    // return {
-    //   ...order,
-    //   orderItems: orderItems.map(item => ({
-    //     productId: item.productId,
-    //     quantity: item.quantity,
-    //     price: item.price,
-    //     name: products.find(i => i.id === parseInt(item.productId)).name,
-    //   })
-    //   ),
-    // };
   }
 
-  changeOrderStatus(id: string, status: ChangeOrderStatusDto['status']) {
-    const order = this.prisma.order.findFirst({
+  async changeOrderStatus(
+    id: string,
+    status: ChangeOrderStatusDto['status'],
+  ) {
+    const order = await this.prisma.order.findFirst({
       where: { id },
     });
 
@@ -223,11 +197,33 @@ export class OrdersService {
 
     return this.prisma.order.update({
       where: { id },
-      data: { status: status },
+      data: { status },
     });
   }
 
   remove(id: string) {
     return `This action removes a #${id} order`;
+  }
+
+  async handlePaidOrder(payload: PaidOrderDto) {
+    const { orderId, stripePaymentId, receiptUrl } = payload;
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paid: true,
+        status: 'PAID',
+        paidAt: new Date(),
+        stripePaymentId,
+        orderReceipts: {
+          create: {
+            receiptUrl,
+          },
+        },
+      },
+      include: {
+        orderReceipts: true,
+      },
+    });
   }
 }
